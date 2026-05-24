@@ -1,0 +1,4 @@
+# ai-delivery-guards example policy
+require_eval_coverage: true
+require_rollback_metadata: true
+require_observability: true

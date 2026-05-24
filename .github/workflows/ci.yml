@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Check passing fixture
+        run: go run ./cmd/guard check --root testdata/good
+
+      - name: Check failing fixture
+        run: |
+          set +e
+          output="$(go run ./cmd/guard check --root testdata/bad 2>&1)"
+          status=$?
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          printf '%s\n' "$output" | grep 'FAIL: eval_coverage'
+          printf '%s\n' "$output" | grep 'FAIL: rollback_metadata'
+          printf '%s\n' "$output" | grep 'FAIL: observability'
