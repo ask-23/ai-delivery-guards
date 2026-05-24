@@ -1,0 +1,2 @@
+service: sample
+rollback: previous_revision
