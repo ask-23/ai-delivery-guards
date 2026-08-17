@@ -1,3 +1,3 @@
 module github.com/ask-23/ai-delivery-guards
 
-go 1.22
+go 1.25
