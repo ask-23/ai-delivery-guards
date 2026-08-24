@@ -12,4 +12,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+      # Demo wiring for this repository. For adversarial PRs, install the guard
+      # from a trusted immutable revision rather than building PR-controlled code.
       - run: go run ./cmd/guard check --root .

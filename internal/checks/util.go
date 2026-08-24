@@ -1,16 +1,13 @@
 package checks
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// defaultExcludes are path fragments skipped by every scan.
-// The guard's own internal/, testdata/, examples/, and policy files contain marker
-// strings ("openai", "rollback", "trace_id") for demonstration purposes. Without
-// these exclusions a scan of the guard repo against itself would self-satisfy.
 var defaultExcludes = []string{
 	".git",
 	"vendor",
@@ -24,8 +21,6 @@ type fileMatch struct {
 	marker string
 }
 
-// isExcludedRelPath reports whether a forward-slash relative path matches any
-// excluded fragment by exact directory component or prefix.
 func isExcludedRelPath(relSlash string, excludes []string) bool {
 	for _, ex := range excludes {
 		if relSlash == ex || strings.HasPrefix(relSlash, ex+"/") || strings.Contains(relSlash, "/"+ex+"/") || strings.HasSuffix(relSlash, "/"+ex) {
@@ -36,13 +31,20 @@ func isExcludedRelPath(relSlash string, excludes []string) bool {
 }
 
 func walkFiles(root string, excludes []string, fn func(path string, content string) error) error {
+	if _, _, err := canonicalRootPaths(root); err != nil {
+		return err
+	}
+
 	skip := append([]string{}, defaultExcludes...)
 	skip = append(skip, excludes...)
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(root, path)
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return fmt.Errorf("resolve path %q relative to scan root: %w", path, relErr)
+		}
 		relSlash := filepath.ToSlash(rel)
 		if relSlash == "." {
 			return nil
@@ -53,12 +55,15 @@ func walkFiles(root string, excludes []string, fn func(path string, content stri
 			}
 			return nil
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink is not allowed in scan root: %s", relSlash)
+		}
 		if d.IsDir() {
 			return nil
 		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return nil
+		b, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", relSlash, readErr)
 		}
 		return fn(path, string(b))
 	})
@@ -79,11 +84,11 @@ func findMatches(root string, needles []string, excludes ...string) ([]fileMatch
 	return matches, err
 }
 
-// hasDirectoryNamed returns the first directory whose own basename matches one
-// of the supplied names (case-insensitive). It walks relative paths only and
-// honors the default + caller-supplied exclusions, so a parent directory the
-// guard happens to live under cannot accidentally satisfy a check.
 func hasDirectoryNamed(root string, names []string, excludes ...string) (bool, string, error) {
+	if _, _, err := canonicalRootPaths(root); err != nil {
+		return false, "", err
+	}
+
 	skip := append([]string{}, defaultExcludes...)
 	skip = append(skip, excludes...)
 	wanted := make(map[string]struct{}, len(names))
@@ -95,16 +100,25 @@ func hasDirectoryNamed(root string, names []string, excludes ...string) (bool, s
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() {
-			return nil
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return fmt.Errorf("resolve path %q relative to scan root: %w", path, relErr)
 		}
-		rel, _ := filepath.Rel(root, path)
 		relSlash := filepath.ToSlash(rel)
 		if relSlash == "." {
 			return nil
 		}
 		if isExcludedRelPath(relSlash, skip) {
-			return filepath.SkipDir
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink is not allowed in scan root: %s", relSlash)
+		}
+		if !d.IsDir() {
+			return nil
 		}
 		if _, ok := wanted[strings.ToLower(d.Name())]; ok {
 			foundPath = path

@@ -10,8 +10,6 @@ import (
 
 var rollbackMarkers = []string{"rollback", "fallback_model", "previous_model"}
 
-// manifestExts are the extensions we accept as deployment-manifest content.
-// A README in deploy/ is not a manifest; a manifest.yml is.
 var manifestExts = map[string]struct{}{
 	".yml":      {},
 	".yaml":     {},
@@ -56,25 +54,19 @@ func RollbackMetadata(root string) ([]report.Finding, error) {
 	}}, nil
 }
 
-// findDeploymentManifests accepts a file as a deployment manifest only when:
-//
-//   - its basename (lowercased, before extension) starts with "manifest", OR
-//   - it sits under a /deploy/ or /deployment/ directory AND has a recognized
-//     manifest extension (yml/yaml/json/tf/toml/hcl/template).
-//
-// This excludes readmes, runbooks, and unrelated files that merely happen to
-// live near a deployment directory or contain the word "manifest" in prose.
 func findDeploymentManifests(root string) ([]string, error) {
 	var out []string
 	err := walkFiles(root, nil, func(path, _ string) error {
-		relSlash := filepath.ToSlash(path)
-		lower := strings.ToLower(relSlash)
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return fmt.Errorf("resolve deployment path %q relative to scan root: %w", path, err)
+		}
 		ext := strings.ToLower(filepath.Ext(path))
 		base := strings.ToLower(filepath.Base(path))
 		baseNoExt := strings.TrimSuffix(base, ext)
 
 		_, extOK := manifestExts[ext]
-		underDeploy := strings.Contains(lower, "/deploy/") || strings.Contains(lower, "/deployment/")
+		underDeploy := hasDirectoryComponent(rel, "deploy", "deployment")
 
 		switch {
 		case strings.HasPrefix(baseNoExt, "manifest") && extOK:
@@ -85,4 +77,22 @@ func findDeploymentManifests(root string) ([]string, error) {
 		return nil
 	})
 	return out, err
+}
+
+func hasDirectoryComponent(rel string, names ...string) bool {
+	wanted := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		wanted[strings.ToLower(name)] = struct{}{}
+	}
+
+	dir := filepath.ToSlash(filepath.Dir(rel))
+	if dir == "." {
+		return false
+	}
+	for _, component := range strings.Split(dir, "/") {
+		if _, ok := wanted[strings.ToLower(component)]; ok {
+			return true
+		}
+	}
+	return false
 }

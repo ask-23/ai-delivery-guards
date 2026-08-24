@@ -1,4 +1,4 @@
-# ai-delivery-guards example policy
+# Store this file outside the repository being scanned.
 require_eval_coverage: true
 require_rollback_metadata: true
 require_observability: true
