@@ -8,10 +8,10 @@ jobs:
   ai-delivery-guards:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
+          go-version: '1.25'
       # Demo wiring for this repository. For adversarial PRs, install the guard
       # from a trusted immutable revision rather than building PR-controlled code.
       - run: go run ./cmd/guard check --root .
