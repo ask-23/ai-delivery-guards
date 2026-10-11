@@ -15,27 +15,28 @@ func main() {
 
 func run(args []string, stdout, stderr *os.File) int {
 	if len(args) < 2 || args[1] != "check" {
-		fmt.Fprintln(stderr, "usage: guard check --root <path>")
+		fmt.Fprintln(stderr, "usage: guard check --root <path> [--policy <path>]")
 		return 2
 	}
 
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	root := fs.String("root", ".", "repository root to scan")
+	policy := fs.String("policy", "", "trusted policy file outside the scan root")
 	if err := fs.Parse(args[2:]); err != nil {
 		return 2
 	}
 
-	cfg, err := checks.LoadConfig(*root)
+	cfg, err := checks.LoadPolicy(*root, *policy)
 	if err != nil {
-		fmt.Fprintf(stderr, "ERROR: load config: %v\n", err)
+		fmt.Fprintf(stderr, "ERROR: load policy: %v\n", err)
 		return 1
 	}
 
 	enabled := checks.Enabled(cfg)
 	if len(enabled) == 0 {
-		fmt.Fprintln(stdout, "WARN: all checks disabled via .ai-guards.yml")
-		return 0
+		fmt.Fprintln(stderr, "ERROR: policy disables all checks")
+		return 1
 	}
 
 	failed := false
